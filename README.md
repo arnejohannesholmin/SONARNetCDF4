@@ -1,14 +1,14 @@
-# SandeelDepthDistribution
+# sonaRnetcdf4
 
 ## Introduction
 
-SandeelDepthDistribution is a package that fits a mixture gamma/normal distribution to sandeel school vertical distribution data.
+sonaRnetcdf4 is a package for read and write netCDF4 Files in the SONAR-netCDF4 convension.
 
 ## Installation
 
 Install the latest version from GitHub:
     ```r
-    remotes::install_github("arnejohannesholmin/SandeelDepthDistribution")
+    remotes::install_github("arnejohannesholmin/sonaRnetcdf4")
     ```
 
 ## License
