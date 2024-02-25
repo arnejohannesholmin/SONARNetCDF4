@@ -52,6 +52,7 @@ writeSTD_vars_dimVars(
 
 # Read back in:
 dflat <- readSTD(filePath)
+unlink(filePath)
 
 # Then try to write again from the flat table (long format):
 filePath2 <- tempfile(fileext = "nc")
@@ -62,6 +63,7 @@ writeSTD(
 
 # The original and written data are identical:
 dflat2 <- readSTD(filePath2)
+unlink(filePath2)
 expect_identical(dflat, dflat2)
 
 #### A bigger example with TS(f): ####
@@ -109,6 +111,7 @@ writeSTD_vars_dimVars(
 
 # Read back in to a flat table:
 dflat3 <- readSTD(filePath3)
+unlink(filePath3)
 
 # Then try to write again:
 filePath4 <- tempfile(fileext = "nc")
@@ -119,4 +122,5 @@ writeSTD(
 
 # The original and written data are identical:
 dflat4 <- readSTD(filePath4)
+unlink(filePath4)
 expect_identical(dflat3, dflat4)
