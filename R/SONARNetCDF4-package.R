@@ -1,10 +1,10 @@
-#' Title of the package
+#' Tools to Read and Write netCDF4 Files in the SONAR-netCDF4 Convension
 #'
-#' Description of the package
+#' Functions to read and write netCDF4 files in the SONAR-netCDF4 convension, which is a standard for SONAR and echosounder data and derived data defined by the International Council for the Exploration of the Sea (ICES).
 #'
-#' Details of the package
+#' 
 #' @docType package
-#' @name SONARNetCDF4
+#' @name sonaRnetcdf4
 #'
 "_PACKAGE"
 

@@ -1,16 +1,20 @@
-Package: SONARNetCDF4
+Package: sonaRnetcdf4
 Version: 0.1.0
 Date: 2024-02-25
-Title: Title of the package
+Title: Tools to Read and Write netCDF4 Files in the SONAR-netCDF4 Convension
 Authors@R: c(
-  person(given = "Given Name", 
-    family = "Family Name", 
+  person(given = "Arne Johannes", 
+    family = "Holmin", 
     role = c("cre", "aut"), 
-    email = "arnejh@hi.no"))
+    email = "arnejh@hi.no"), 
+  person(given = "Norwegian Institute of Marine Research", 
+    role = c("cph", "fnd")))
 Depends: R (>= 3.6)
-Description: Description of the package
-URL: https://github.com/arnejohannesholmin/SONARNetCDF4
-BugReports: https://github.com/arnejohannesholmin/SONARNetCDF4/issues
+Description: Functions to read and write netCDF4 files in the SONAR-netCDF4 convension,
+  which is a standard for SONAR and echosounder data and derived data defined
+  by the International Council for the Exploration of the Sea (ICES).
+URL: https://github.com/arnejohannesholmin/sonaRnetcdf4
+BugReports: https://github.com/arnejohannesholmin/sonaRnetcdf4/issues
 License: LGPL-3
 LazyData: true
 Encoding: UTF-8
