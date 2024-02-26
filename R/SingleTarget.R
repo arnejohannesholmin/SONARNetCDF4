@@ -6,6 +6,9 @@
 #' 
 #' @param x A table of SingleTarget data.
 #' @param filePath The path to the SONAR-netCDF4 file to write to.
+#' @param ow Logical: If TRUE overwrite the file given by \code{filePath} if existing.
+#' @param vars A nested list of SingleTarget variables following the SingleTarget group of the SONAR-netCDF4 convention.
+#' @param dimVars A list of dimension variables.
 #' 
 #' @examples
 #' #### Small example: ####
@@ -135,66 +138,72 @@
 #' 
 #' @export
 #' 
-writeSTD <- function(x, filePath) {
+writeSTD <- function(x, filePath, ow = FALSE) {
 	
+    if(!inherits(x, "data.table")) {
+        data.table::setDT(x)
+    }
 	singleTargetSchema <- getSingleTargetSchema()
 	validVar <- c(singleTargetSchema$dimension_variables, singleTargetSchema$variables)
 	invalidVar <- setdiff(names(x), validVar)
 	if(length(invalidVar)) {
-		warning("There are variable not defined by the SONAR-netCDF4 convention. Please remove these from the data (", paste(invalidVar, collapse = ", "), ").")
+		warning("There are variables not defined by the SONAR-netCDF4 convention. These were removed from the data (", paste(invalidVar, collapse = ", "), ").")
+	    x[, (invalidVar) := NULL]
 	}
 	
 	x <- flatTable2nestedListPerVariable(x)
-	writeSTD_vars_dimVars(vars = x$vars, dimVars = x$dimVars, filePath = filePath)
+	writeSTD_vars_dimVars(vars = x$vars, dimVars = x$dimVars, filePath = filePath, ow = ow)
 
 }
 
 ##################################################
 #' Read the SingleTarget group of the SONAR-netCDF4 convention from dimemsions and variables (nested list)
 #' 
-#' @param vars A nested list of SingleTarget variables following the SingleTarget group of the SONAR-netCDF4 convention.
-#' @param dimVars A list of dimension variables.
-#' @param filePath The path to the SONAR-netCDF4 file to read.
-#' 
 #' @export
 #' @rdname writeSTD
 #' 	
-writeSTD_vars_dimVars <- function(vars, dimVars, filePath) {
+writeSTD_vars_dimVars <- function(vars, dimVars, filePath, ow = FALSE) {
 	
-	# Get the dimensions if not given:
+    if(file.exists(filePath)) {
+        if(ow) {
+            unlink(filePath)
+        }
+        else {
+            stop("The file ", filePath, " already exists.")
+        }
+    }
+    
+    # Get the dimensions if not given:
 	dimensions <- getSingleTargetSchema(vars)$dimensions
 	vlen_variables <- getSingleTargetSchema(vars)$vlen_variables
 	
 	pingInd <- seq_along(unique(dimVars$ping_time))
-	lapply(
-		pingInd, 
+	mapply(
 		writeSTD_OnePing, 
-		vars = vars, 
-		dimVars = dimVars, 
-		dimensions = dimensions, 
-		vlen_variables = vlen_variables, 
-		filePath = filePath, 
-		append = TRUE
+		pingInd, 
+		append = pingInd != 1, 
+		MoreArgs = list(
+		    vars = vars, 
+		    dimVars = dimVars, 
+		    dimensions = dimensions, 
+		    vlen_variables = vlen_variables, 
+		    filePath = filePath
+		)
 	)
 	
 	invisible(filePath)
 }
 
 writeSTD_OnePing <- function(pingInd, vars, dimVars, dimensions, vlen_variables, filePath, append = FALSE) {
-	
-	if(file.exists(filePath)) {
-		if(append) {
-			nc <- RNetCDF::open.nc(filePath, write = TRUE)
-			if(RNetCDF::file.inq.nc (nc)$format != "netcdf4") {
-				stop("The file ", filePath, " must be a netcdf4 file.")
-			}
-			
-			# Get the SingleTarget group:
-			grp <- RNetCDF::grp.inq.nc(nc, getSingleTargetSchema()$groupName)$self
-		}
-		else {
-			stop("The file ", filePath, " already exists.")
-		}
+    
+    if(file.exists(filePath)) {
+	    nc <- RNetCDF::open.nc(filePath, write = TRUE)
+	    if(RNetCDF::file.inq.nc (nc)$format != "netcdf4") {
+	        stop("The file ", filePath, " must be a netcdf4 file.")
+	    }
+	    
+	    # Get the SingleTarget group:
+	    grp <- RNetCDF::grp.inq.nc(nc, getSingleTargetSchema()$groupName)$self
 	}
 	else {
 		# Create a new NetCDF dataset
@@ -295,6 +304,7 @@ defineTime <- function(nc, timeLabel = "ping_time", type = "NC_DOUBLE", unlim = 
 	RNetCDF::att.put.nc(nc, timeLabel, name = "units", type = "NC_CHAR", value = time_unit)
 	RNetCDF::att.put.nc(nc, timeLabel, name = "variableType", type = "NC_CHAR", value = "timeDimension")
 }
+
 putOneTime <- function(nc, time, timeInd, timeLabel = "ping_time", time_unit = "nanoseconds since 1970-01-01 00:00:00 +00:00", dimlength = 1) {
 	RNetCDF::var.put.nc(nc, timeLabel, data = RNetCDF::utinvcal.nc(time_unit, time[timeInd]), start = timeInd, count = 1)
 }
@@ -365,19 +375,32 @@ flatTable2nestedListPerVariable <- function(x) {
 }
 
 splitVariables <- function(x, variables, dimensions, dimension_variables, vlen_variables) {
-	
+	# Get the dimension variable names:
 	presentDimensions <- intersect(names(x), dimension_variables)
 	
+	# Convert POSIXct to numeric and sting to factor to speed up splitting:
+	dims <- subset(x, select = presentDimensions)
+	for(dimVarName in presentDimensions) {
+	    if(inherits(dims[[dimVarName]], "POSIXct")) {
+	        #x[[dimVarName]] <- as.numeric(x[[dimVarName]])
+	        dims[, eval(dimVarName) := as.numeric(get(dimVarName))]
+	    }
+	    else {
+	        # The split() converts everything for factor, so we might as well do that beforehand, so that this is only done once and not for each individual variable we are splitting:
+	        dims[, eval(dimVarName) := as.factor(get(dimVarName))]
+	    }
+	}
+	
+	# Split the keys so they can be used when splitting the variables:
 	keys <- list()
-	keys[[1]] <- x[[dimension_variables[1]]]
-	keys[[2]] <- split(x[[dimension_variables[2]]], keys[[1]])
+	keys[[1]] <- dims[[dimension_variables[1]]]
+	keys[[2]] <- split(dims[[dimension_variables[2]]], keys[[1]])
 	if(length(presentDimensions) == 3) {
-		keys[[3]] <- split(x[[dimension_variables[3]]], keys[[1]])
+		keys[[3]] <- split(dims[[dimension_variables[3]]], keys[[1]])
 		keys[[3]] <- lapply(seq_along(keys[[3]]), function(ind) split(keys[[3]][[ind]], keys[[2]][[ind]]))
 	}
 	
-	
-	
+	# Split the variables:
 	vars <- lapply(variables, simplifyVariable, x, dimensions, vlen_variables, keys)
 	names(vars) <- variables
 	
@@ -391,58 +414,59 @@ simplifyVariable <- function(varName, x, dimensions, vlen_variables, keys) {
 
 	# Split first and second level:
 	temp <- x[[varName]]
-	temp <- split(temp, keys[[1]])
+	temp <- split(temp, keys[[1]]) # Split pings
 	temp <- lapply(
-		seq_along(temp), 
+		seq_along(temp), # Loop through pings ...
 		function(ind) 
-			split(temp[[ind]], keys[[2]][[ind]]) 
+			split(temp[[ind]], keys[[2]][[ind]]) # ... and split by beams
 	)
 	
 	# Move into the third level if required:
 	if(any(lengths(dimensions) == 3)) {
 		temp <- lapply(
-			seq_along(temp), 
+			seq_along(temp), # Loop through pings
 			function(ind1) 
 				lapply(
-					seq_along(temp[[ind1]]), 
+					seq_along(temp[[ind1]]), # Loop through beams ... 
 					function(ind2) 
-						split(temp[[ind1]][[ind2]], keys[[3]][[ind1]][[ind2]])
+						split(temp[[ind1]][[ind2]], keys[[3]][[ind1]][[ind2]]) # ... and split by frequencies
 				)
 		)
 	}
 	
-	
-	
-	
-	
+	# If the variable is not variable length (vlen) we need to extract only one value. If the 
 	if(! varName %in% vlen_variables) {
 		
-		temp <- lapply(
-			seq_along(temp), 
-			function(ind1) 
-				lapply(
-					seq_along(temp[[ind1]]), 
-					function(ind2) 
-						unlist( lapply(temp[[ind1]][[ind2]], utils::head, 1), use.names = FALSE)
-				)
-		)
-		
-		
+	    # Select the first element of three level list (if there are any three level lists, that is):
+	    if(any(lengths(dimensions) == 3)) {
+	        temp <- lapply(
+	            seq_along(temp), # Loop through pings
+	            function(ind1) 
+	                lapply(
+	                    seq_along(temp[[ind1]]), # Loop through beams ... 
+	                    function(ind2) 
+	                        unlist( lapply(temp[[ind1]][[ind2]], "[", 1), use.names = FALSE) # ... and pick the first of each frequency
+	                )
+	        )
+	    }
+	    
+		# Then select the first element for two level list:
 		if(length(dimensions[[varName]]) == 2) {
 			temp <- lapply(
-				seq_along(temp), 
+				seq_along(temp), # Loop through pings ... 
 				function(ind1) 
-					unlist( lapply(temp[[ind1]], utils::head, 1), use.names = FALSE)
+					unlist( lapply(temp[[ind1]], "[", 1), use.names = FALSE) # ... and pick the first of each beam and unlist these to a vector
 			)
 		}
 		
 	}
+	# For vlen variables with two levels there is a need to select the first 
 	else {
 		if(any(lengths(dimensions) == 3)  &&  length(dimensions[[varName]]) == 2) {
 			temp <- lapply(
-				seq_along(temp), 
+				seq_along(temp), # Loop through pings ... 
 				function(ind1) 
-					lapply(temp[[ind1]], function(y) y[[1]] )
+					lapply(temp[[ind1]], "[[", 1) # ... and pick the first list element (frequency) of each beam
 			)
 		}
 	}
@@ -461,15 +485,15 @@ simplifyVariable <- function(varName, x, dimensions, vlen_variables, keys) {
 #' 	
 readSTD <- function(filePath) {
 	
-	# Read  back in:
+    # Read  back in:
 	ncIn <- RNetCDF::open.nc(filePath)
 	SingleTargetGroup <- RNetCDF::grp.inq.nc(ncIn, getSingleTargetSchema()$groupName)$self
 	dat <- RNetCDF::read.nc(SingleTargetGroup)
-
+	
 	# Get the variable types:
 	variableType <- mapply(RNetCDF::att.get.nc, seq_along(dat) - 1, MoreArgs = list(ncfile = SingleTargetGroup, attribute = "variableType"))
 	RNetCDF::close.nc(ncIn)
-
+	
 	# Identify variables:
 	isVariable <- endsWith(variableType, "variable")
 	
@@ -481,24 +505,22 @@ readSTD <- function(filePath) {
 	
 	## R arranges the fastest changing dimension first, contrary to netCDF4, so we transpose the tables:
 	dat[isVariable] <- lapply(dat[isVariable], function(x) if(length(dim(x)) >= 2) aperm(x))
-
+	
 	# Collapse the arrays:
-	d <- data.table::as.data.table(
-		c(
-			do.call(data.table::CJ, dat[!isVariable]), 
-			lapply(dat[isVariable], c)
-		)
+	d <- c(
+		do.call(data.table::CJ, dat[!isVariable]), 
+		lapply(dat[isVariable], c)
 	)
+	data.table::setDT(d)
 	
 	
-	# Expand to a flat table by repeatig the non-vlen variables and unlist the vlen-variables::
+	# Expand to a flat table by repeating the non-vlen variables and unlist the vlen-variables::
 	vlenVariable <- subset(names(d), startsWith(variableType, "vlen"))
 	vlens <- lapply(d[, ..vlenVariable], lengths)
-	dflat <- data.table::as.data.table(
-		lapply(names(d), function(name) if(name %in% vlenVariable) unlist(d[[name]]) else rep(d[[name]], vlens[[1]]))
-	)
+	dflat <- lapply(names(d), function(name) if(name %in% vlenVariable) unlist(d[[name]]) else rep(d[[name]], vlens[[1]]))
+	data.table::setDT(dflat)
 	names(dflat) <- names(d)
-
+	
 	# Convert time:
 	time_unit <- "nanoseconds since 1970-01-01 00:00:00 +00:00"
 	dflat[, ping_time := RNetCDF::utcal.nc(time_unit, ping_time, "c")]

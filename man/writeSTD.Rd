@@ -6,9 +6,9 @@
 \alias{readSTD}
 \title{Write the SingleTarget group of the SONAR-netCDF4 convention}
 \usage{
-writeSTD(x, filePath)
+writeSTD(x, filePath, ow = FALSE)
 
-writeSTD_vars_dimVars(vars, dimVars, filePath)
+writeSTD_vars_dimVars(vars, dimVars, filePath, ow = FALSE)
 
 readSTD(filePath)
 }
@@ -16,6 +16,8 @@ readSTD(filePath)
 \item{x}{A table of SingleTarget data.}
 
 \item{filePath}{The path to the SONAR-netCDF4 file to read.}
+
+\item{ow}{Logical: If TRUE overwrite the file given by \code{filePath} if existing.}
 
 \item{vars}{A nested list of SingleTarget variables following the SingleTarget group of the SONAR-netCDF4 convention.}
 
